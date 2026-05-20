@@ -98,7 +98,13 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
                 {
                     for (int kj = w_cols - 1, kcj = 0; kj >= 0; kj--, kcj++)
                     {
-                        sum += w(ki, kj) * input((i - w_rows / 2 + rows + kri), (j - w_cols / 2 + cols + kcj));
+                        int r = i + kri - w_rows / 2;
+                        int c = (j + kcj - w_cols / 2) % cols;
+                        double val = input[r * cols + c + cols];
+                        if (i > 0 && j == 0) {
+                            printf("input[%d][%d] = %.2f, w[%d][%d] = %.4f, i = %d, j = %d\n", r, c, val, kri, kcj, w(ki, kj), i, j);
+                        }
+                        sum += w(ki, kj) * val;
                     }
                 }
                 result[i * cols + j] = sum;
@@ -144,7 +150,38 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
     double *inner_world = padded_world + cols; // Skip top overlapping row
     double *tmp = (double *)calloc(n_rows * cols, sizeof(double));
 
-    printf("Process %d handling rows %d to %d\n", rank, rank * (rows / procs) + (rank < rows % procs ? rank : rows % procs), rank * (rows / procs) + (rank < rows % procs ? rank : rows % procs) + n_rows - 1);
+    printf("Process %d handling %d rows\n", rank, n_rows);
+
+    // TEST
+    double test_world[] = {
+        1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0,
+        -2, 0, 1, 2, 0,
+        0, 0, 0, -1, 4,
+        5, 2, 3, 1, 0,
+    };
+    int test_cols = 5;
+    int test_rows = 3;
+    double *test_input = test_world + test_cols;
+    double test_kernel[] = {
+        0, 0.25, 0,
+        0.25, 1, 0.25,
+        0, 0.25, 0
+    };
+    double test_output[] = {
+        -0.25, 0.25, 0.50, 0.75, 0.25,
+        -2.00, -0.25, 1.50, 2.00, 1.00,
+        1.75, 0.50, 0.75, 0.75, 3.75,
+    };
+    double *outbuf = (double *)calloc(test_rows * test_cols, sizeof(double));
+    convolve2d(outbuf, test_world, test_kernel, test_rows, test_cols, 3, 3);
+    // verify output matches outbuf
+    for (unsigned int i = 0; i < test_rows; i++) {
+        for (unsigned int j = 0; j < test_cols; j++) {
+            printf("expected: %.2f, got: %.2f\n", test_output[i * test_cols + j], outbuf[i * test_cols + j]);
+        }
+        printf("\n");
+    }
 
     // Place orbiums
     for (unsigned int o = 0; o < num_orbiums; o++)
@@ -154,7 +191,7 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
         // if (orbium_row >= -ORBIUM_SIZE && orbium_row < n_rows + ORBIUM_SIZE)
         padded_world = place_orbium(padded_world, n_rows, cols, orbium_row, orbiums[o].col, orbiums[o].angle);
     }
-    
+
     // Lenia Simulation
     for (unsigned int step = 0; step < steps; step++)
     {
