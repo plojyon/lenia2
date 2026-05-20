@@ -7,7 +7,7 @@
 
 
 // Uncomment to generate gif animation
-//#define GENERATE_GIF
+#define GENERATE_GIF
 
 // For prettier indexing syntax
 #define w(r, c) (w[(r) * w_cols + (c)])
@@ -116,14 +116,16 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
     MPI_Comm_size(MPI_COMM_WORLD, &procs);
 
 #ifdef GENERATE_GIF
-    ge_GIF *gif = ge_new_gif(
-        "lenia.gif",     /* file name */
-        cols, rows,      /* canvas size */
-        inferno_pallete, /*pallete*/
-        8,               /* palette depth == log2(# of colors) */
-        -1,              /* no transparency */
-        0                /* infinite loop */
-    );
+    ge_GIF *gif = NULL;
+    if (rank == 0)
+        gif = ge_new_gif(
+            "lenia.gif",     /* file name */
+            cols, rows,      /* canvas size */
+            inferno_pallete, /* pallete */
+            8,               /* palette depth == log2(# of colors) */
+            -1,              /* no transparency */
+            0                /* infinite loop */
+        );
 #endif
 
     // Allocate memory
@@ -166,17 +168,32 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
             for (unsigned int j = 0; j < cols; j++) {
                 inner_world[i * cols + j] += dt * growth_lenia(tmp[i * cols + j]);
                 inner_world[i * cols + j] = fmin(1, fmax(0, inner_world[i * cols + j])); // Clip between 0 and 1
-#ifdef GENERATE_GIF
-                gif->frame[i * cols + j] = inner_world[i * cols + j] * 255;
-#endif
             }
         }
 #ifdef GENERATE_GIF
-        ge_add_frame(gif, 5);
+        double* recvbuf = rank == 0? malloc(rows * cols * sizeof(double)) : NULL;
+        MPI_Gather(
+            inner_world, // send buffer
+            n_rows * cols,
+            MPI_DOUBLE,
+            recvbuf, //gif == NULL? NULL : gif->frame, // receive buffer
+            n_rows * cols,
+            MPI_DOUBLE,
+            0, // root process
+            MPI_COMM_WORLD
+        );
+        if (rank == 0) {
+            for (unsigned int i = 0; i < rows; i++) {
+                for (unsigned int j = 0; j < cols; j++) {
+                    gif->frame[i * cols + j] = recvbuf[i*cols + j] * 255;
+                }
+            }
+            ge_add_frame(gif, 5);
+        }
 #endif
     }
 #ifdef GENERATE_GIF
-    ge_close_gif(gif);
+    if (rank == 0) ge_close_gif(gif);
 #endif
     free(w);
     free(tmp);
