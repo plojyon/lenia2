@@ -371,7 +371,11 @@ double *place_orbium(double *world, unsigned int rows, unsigned int cols, unsign
         {
             for (int j = 0; j < ORBIUM_SIZE; j++)
             {
-                world[(y + i) % rows * cols + (x + j) % cols] = orbium[i][j];
+                int coo_x = (x + j) % cols;
+                int coo_y = (y + i); // do not wrap rows
+                if (coo_y < 0 || coo_y >= rows)
+                    continue;
+                world[coo_y * cols + coo_x] = orbium[i][j];
             }
         }
     }

@@ -11,7 +11,29 @@
 
 // For prettier indexing syntax
 #define w(r, c) (w[(r) * w_cols + (c)])
-#define input(r, c) (input[((r) % rows) * cols + ((c) % cols)])
+#define input(r, c) (input[(r) * cols + ((c) % cols)])
+
+void exchange_overlap(double *padded_world, int n_rows, int cols, int rank, int procs)
+{
+    MPI_Request requests[4];
+    MPI_Status statuses[4];
+    int request_count = 0;
+
+    // Send top overlap row to previous rank, receive from next rank
+    int target_rank = rank - 1;
+    target_rank = (target_rank + procs) % procs;
+    MPI_Isend(padded_world + cols, cols, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Irecv(padded_world, cols, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
+
+    // Send bottom overlap row to next rank, receive from previous rank
+    target_rank = (rank + 1) % procs;
+    MPI_Isend(padded_world + (n_rows - 2) * cols, cols, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Irecv(padded_world + (n_rows - 1) * cols, cols, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
+
+    if (request_count > 0) {
+        MPI_Waitall(request_count, requests, statuses);
+    }
+}
 
 // Function to calculate Gaussian
 inline double gauss(double x, double mu, double sigma)
@@ -89,6 +111,9 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
 // Function to evolve Lenia
 double *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums)
 {
+    int rank, procs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &procs);
 
 #ifdef GENERATE_GIF
     ge_GIF *gif = ge_new_gif(
@@ -103,33 +128,46 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
 
     // Allocate memory
     double *w = (double *)calloc(kernel_size * kernel_size, sizeof(double));
-    double *world = (double *)calloc(rows * cols, sizeof(double));
-    double *tmp = (double *)calloc(rows * cols, sizeof(double));
 
     // Generate convolution kernel
     w=generate_kernel(w,kernel_size);
 
+    // Distribute rows to processes
+    unsigned int n_rows = rows / procs;
+    if (rank < rows % procs) {
+        n_rows++;
+    }
+
+    double *padded_world = (double *)calloc((n_rows+2)* cols, sizeof(double));
+    double *inner_world = padded_world + cols; // Skip top overlapping row
+    double *tmp = (double *)calloc(n_rows * cols, sizeof(double));
+
+    printf("Process %d handling rows %d to %d\n", rank, rank * (rows / procs) + (rank < rows % procs ? rank : rows % procs), rank * (rows / procs) + (rank < rows % procs ? rank : rows % procs) + n_rows - 1);
+
     // Place orbiums
     for (unsigned int o = 0; o < num_orbiums; o++)
     {
-        world = place_orbium(world, rows, cols, orbiums[o].row, orbiums[o].col, orbiums[o].angle);
+        int orbium_row = orbiums[o].row - rank * n_rows;
+        // relevant but redundant condition
+        // if (orbium_row >= -ORBIUM_SIZE && orbium_row < n_rows + ORBIUM_SIZE)
+        padded_world = place_orbium(padded_world, n_rows, cols, orbium_row, orbiums[o].col, orbiums[o].angle);
     }
-
+    
     // Lenia Simulation
     for (unsigned int step = 0; step < steps; step++)
     {
+        // Exchange overlapping rows with neighbors
+        exchange_overlap(padded_world, n_rows, cols, rank, procs);
         // Convolution
-        tmp = convolve2d(tmp, world, w, rows, cols, kernel_size, kernel_size);
-        
+        tmp = convolve2d(tmp, inner_world, w, n_rows, cols, kernel_size, kernel_size);
+
         // Evolution
-        for (unsigned int i = 0; i < rows; i++)
-        {
-            for (unsigned int j = 0; j < cols; j++)
-            {
-                world[i * rows + j] += dt * growth_lenia(tmp[i * rows + j]);
-                world[i * rows + j] = fmin(1, fmax(0, world[i * rows + j])); // Clip between 0 and 1
+        for (unsigned int i = 0; i < n_rows; i++) {
+            for (unsigned int j = 0; j < cols; j++) {
+                inner_world[i * cols + j] += dt * growth_lenia(tmp[i * cols + j]);
+                inner_world[i * cols + j] = fmin(1, fmax(0, inner_world[i * cols + j])); // Clip between 0 and 1
 #ifdef GENERATE_GIF
-                gif->frame[i * rows + j] = world[i * rows + j] * 255;
+                gif->frame[i * cols + j] = inner_world[i * cols + j] * 255;
 #endif
             }
         }
@@ -142,5 +180,6 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
 #endif
     free(w);
     free(tmp);
-    return world;
+    // do not return inner_world because parent calls free()
+    return padded_world;
 }
