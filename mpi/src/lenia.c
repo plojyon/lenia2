@@ -30,8 +30,8 @@ void exchange_overlap(double *padded_world, int n_rows, int cols, int rank, int 
 
     // Send bottom overlap row to next rank, receive from previous rank
     target_rank = (rank + 1) % procs;
-    MPI_Isend(padded_world + (n_rows * cols - 2 * OVERLAP), OVERLAP, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
-    MPI_Irecv(padded_world + (n_rows * cols - 1 * OVERLAP), OVERLAP, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Isend(padded_world + OVERLAP + (n_rows * cols - 1 * OVERLAP), OVERLAP, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Irecv(padded_world + OVERLAP + (n_rows * cols - 0 * OVERLAP), OVERLAP, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
 
     if (request_count > 0) {
         MPI_Waitall(request_count, requests, statuses);
