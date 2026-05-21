@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
 
     if (argc < 1)
     {
-        return "usage: <N>";
+        printf("usage: <N>");
     }
 
     int n = atoi(argv[0]);
