@@ -5,9 +5,8 @@
 #include "orbium.h"
 #include "gifenc.h"
 
-
 // Uncomment to generate gif animation
-#define GENERATE_GIF
+// #define GENERATE_GIF
 
 // For prettier indexing syntax
 #define w(r, c) (w[(r) * w_cols + (c)])
