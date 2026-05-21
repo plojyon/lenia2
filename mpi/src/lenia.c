@@ -13,7 +13,10 @@
 #define w(r, c) (w[(r) * w_cols + (c)])
 #define input(r, c) (input[(r) * cols + ((c) % cols)])
 
-void exchange_overlap(double *padded_world, int n_rows, int cols, int rank, int procs)
+// TODO: algo will break if n_rows < OVERLAP. assert otherwise
+#define OVERLAP (cols * w_rows / 2)
+
+void exchange_overlap(double *padded_world, int n_rows, int cols, int rank, int procs, int w_rows)
 {
     MPI_Request requests[4];
     MPI_Status statuses[4];
@@ -22,13 +25,13 @@ void exchange_overlap(double *padded_world, int n_rows, int cols, int rank, int 
     // Send top overlap row to previous rank, receive from next rank
     int target_rank = rank - 1;
     target_rank = (target_rank + procs) % procs;
-    MPI_Isend(padded_world + cols, cols, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
-    MPI_Irecv(padded_world, cols, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Isend(padded_world + OVERLAP, OVERLAP, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Irecv(padded_world, OVERLAP, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
 
     // Send bottom overlap row to next rank, receive from previous rank
     target_rank = (rank + 1) % procs;
-    MPI_Isend(padded_world + (n_rows - 2) * cols, cols, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
-    MPI_Irecv(padded_world + (n_rows - 1) * cols, cols, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Isend(padded_world + (n_rows * cols - 2 * OVERLAP), OVERLAP, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Irecv(padded_world + (n_rows * cols - 1 * OVERLAP), OVERLAP, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
 
     if (request_count > 0) {
         MPI_Waitall(request_count, requests, statuses);
@@ -99,11 +102,13 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
                     for (int kj = w_cols - 1, kcj = 0; kj >= 0; kj--, kcj++)
                     {
                         int r = i + kri - w_rows / 2;
-                        int c = (j + kcj - w_cols / 2) % cols;
-                        double val = input[r * cols + c + cols];
-                        if (i > 0 && j == 0) {
-                            printf("input[%d][%d] = %.2f, w[%d][%d] = %.4f, i = %d, j = %d\n", r, c, val, kri, kcj, w(ki, kj), i, j);
-                        }
+                        int c = (j + kcj - w_cols / 2 + cols) % cols;
+                        // printf("i: %d, kri: %d, w_rows: %d, j: %d, kcj: %d, w_cols: %d\n", i, kri, w_rows, j, kcj, w_cols);
+                        // printf("input[%d][%d] = [%d], w[%d][%d] = %.4f, i = %d, j = %d\n", r, c, r * cols + c + OVERLAP, kri, kcj, w(ki, kj), i, j);
+                        double val = input[r * cols + c + OVERLAP];
+                        // if (i > 0 && j == 0) {
+                        //     printf("input[%d][%d] = %.2f, w[%d][%d] = %.4f, i = %d, j = %d\n", r, c, val, kri, kcj, w(ki, kj), i, j);
+                        // }
                         sum += w(ki, kj) * val;
                     }
                 }
@@ -120,6 +125,9 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
     int rank, procs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &procs);
+
+    // alias for DEBUG macro
+    const int w_rows = kernel_size;
 
 #ifdef GENERATE_GIF
     ge_GIF *gif = NULL;
@@ -146,42 +154,42 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
         n_rows++;
     }
 
-    double *padded_world = (double *)calloc((n_rows+2)* cols, sizeof(double));
-    double *inner_world = padded_world + cols; // Skip top overlapping row
+    double *padded_world = (double *)calloc(n_rows * cols + 2 * OVERLAP, sizeof(double));
+    double *inner_world = padded_world + OVERLAP; // Skip top overlapping row
     double *tmp = (double *)calloc(n_rows * cols, sizeof(double));
 
     printf("Process %d handling %d rows\n", rank, n_rows);
 
-    // TEST
-    double test_world[] = {
-        1, 1, 1, 1, 1,
-        0, 0, 0, 0, 0,
-        -2, 0, 1, 2, 0,
-        0, 0, 0, -1, 4,
-        5, 2, 3, 1, 0,
-    };
-    int test_cols = 5;
-    int test_rows = 3;
-    double *test_input = test_world + test_cols;
-    double test_kernel[] = {
-        0, 0.25, 0,
-        0.25, 1, 0.25,
-        0, 0.25, 0
-    };
-    double test_output[] = {
-        -0.25, 0.25, 0.50, 0.75, 0.25,
-        -2.00, -0.25, 1.50, 2.00, 1.00,
-        1.75, 0.50, 0.75, 0.75, 3.75,
-    };
-    double *outbuf = (double *)calloc(test_rows * test_cols, sizeof(double));
-    convolve2d(outbuf, test_world, test_kernel, test_rows, test_cols, 3, 3);
-    // verify output matches outbuf
-    for (unsigned int i = 0; i < test_rows; i++) {
-        for (unsigned int j = 0; j < test_cols; j++) {
-            printf("expected: %.2f, got: %.2f\n", test_output[i * test_cols + j], outbuf[i * test_cols + j]);
-        }
-        printf("\n");
-    }
+    //// TEST
+    // double test_world[] = {
+    //     1, 1, 1, 1, 1,
+    //     0, 0, 0, 0, 0,
+    //     -2, 0, 1, 2, 0,
+    //     0, 0, 0, -1, 4,
+    //     5, 2, 3, 1, 0,
+    // };
+    // int test_cols = 5;
+    // int test_rows = 3;
+    // double *test_input = test_world + test_cols;
+    // double test_kernel[] = {
+    //     0, 0.25, 0,
+    //     0.25, 1, 0.25,
+    //     0, 0.25, 0
+    // };
+    // double test_output[] = {
+    //     -0.25, 0.25, 0.50, 0.75, 0.25,
+    //     -2.00, -0.25, 1.50, 2.00, 1.00,
+    //     1.75, 0.50, 0.75, 0.75, 3.75,
+    // };
+    // double *outbuf = (double *)calloc(test_rows * test_cols, sizeof(double));
+    // convolve2d(outbuf, test_world, test_kernel, test_rows, test_cols, 3, 3);
+    // // verify output matches outbuf
+    // for (unsigned int i = 0; i < test_rows; i++) {
+    //     for (unsigned int j = 0; j < test_cols; j++) {
+    //         printf("expected: %.2f, got: %.2f\n", test_output[i * test_cols + j], outbuf[i * test_cols + j]);
+    //     }
+    //     printf("\n");
+    // }
 
     // Place orbiums
     for (unsigned int o = 0; o < num_orbiums; o++)
@@ -189,16 +197,16 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
         int orbium_row = orbiums[o].row - rank * n_rows;
         // relevant but redundant condition
         // if (orbium_row >= -ORBIUM_SIZE && orbium_row < n_rows + ORBIUM_SIZE)
-        padded_world = place_orbium(padded_world, n_rows, cols, orbium_row, orbiums[o].col, orbiums[o].angle);
+        place_orbium(inner_world, n_rows, cols, orbium_row, orbiums[o].col, orbiums[o].angle);
     }
 
     // Lenia Simulation
     for (unsigned int step = 0; step < steps; step++)
     {
         // Exchange overlapping rows with neighbors
-        exchange_overlap(padded_world, n_rows, cols, rank, procs);
+        exchange_overlap(padded_world, n_rows, cols, rank, procs, kernel_size);
         // Convolution
-        tmp = convolve2d(tmp, inner_world, w, n_rows, cols, kernel_size, kernel_size);
+        tmp = convolve2d(tmp, padded_world, w, n_rows, cols, kernel_size, kernel_size);
 
         // Evolution
         for (unsigned int i = 0; i < n_rows; i++) {
