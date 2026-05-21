@@ -13,7 +13,9 @@
 #define w(r, c) (w[(r) * w_cols + (c)])
 #define input(r, c) (input[(r) * cols + ((c) % cols)])
 
-void exchange_overlap(double *padded_world, int n_rows, int cols, int rank, int procs)
+#define OVERLAP (cols * w_rows / 2)
+
+void exchange_overlap(double *padded_world, int n_rows, int cols, int rank, int procs, int w_rows)
 {
     MPI_Request requests[4];
     MPI_Status statuses[4];
@@ -22,13 +24,13 @@ void exchange_overlap(double *padded_world, int n_rows, int cols, int rank, int 
     // Send top overlap row to previous rank, receive from next rank
     int target_rank = rank - 1;
     target_rank = (target_rank + procs) % procs;
-    MPI_Isend(padded_world + cols, cols, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
-    MPI_Irecv(padded_world, cols, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Isend(padded_world + OVERLAP, OVERLAP, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Irecv(padded_world, OVERLAP, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
 
     // Send bottom overlap row to next rank, receive from previous rank
     target_rank = (rank + 1) % procs;
-    MPI_Isend(padded_world + (n_rows - 2) * cols, cols, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
-    MPI_Irecv(padded_world + (n_rows - 1) * cols, cols, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Isend(padded_world + OVERLAP + (n_rows * cols - 1 * OVERLAP), OVERLAP, MPI_DOUBLE, target_rank, 0, MPI_COMM_WORLD, &requests[request_count++]);
+    MPI_Irecv(padded_world + OVERLAP + (n_rows * cols - 0 * OVERLAP), OVERLAP, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD, &requests[request_count++]);
 
     if (request_count > 0) {
         MPI_Waitall(request_count, requests, statuses);
@@ -98,7 +100,10 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
                 {
                     for (int kj = w_cols - 1, kcj = 0; kj >= 0; kj--, kcj++)
                     {
-                        sum += w(ki, kj) * input((i - w_rows / 2 + rows + kri), (j - w_cols / 2 + cols + kcj));
+                        int r = i + kri - w_rows / 2; // do not wrap rows
+                        int c = (j + kcj - w_cols / 2 + cols) % cols;
+                        double val = input[r * cols + c + OVERLAP];
+                        sum += w(ki, kj) * val;
                     }
                 }
                 result[i * cols + j] = sum;
@@ -114,6 +119,9 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
     int rank, procs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &procs);
+
+    // alias for DEBUG macro
+    const int w_rows = kernel_size;
 
 #ifdef GENERATE_GIF
     ge_GIF *gif = NULL;
@@ -140,11 +148,17 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
         n_rows++;
     }
 
-    double *padded_world = (double *)calloc((n_rows+2)* cols, sizeof(double));
-    double *inner_world = padded_world + cols; // Skip top overlapping row
+    // algo will break if n_rows < w_rows/2 -- you would need to exchange overlap with non-neighbouring ranks
+    if (n_rows * cols < OVERLAP) {
+        printf("Oh no. You stupid.\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    double *padded_world = (double *)calloc(n_rows * cols + 2 * OVERLAP, sizeof(double));
+    double *inner_world = padded_world + OVERLAP; // Skip top overlapping row
     double *tmp = (double *)calloc(n_rows * cols, sizeof(double));
 
-    printf("Process %d handling rows %d to %d\n", rank, rank * (rows / procs) + (rank < rows % procs ? rank : rows % procs), rank * (rows / procs) + (rank < rows % procs ? rank : rows % procs) + n_rows - 1);
+    printf("Process %d handling %d rows\n", rank, n_rows);
 
     // Place orbiums
     for (unsigned int o = 0; o < num_orbiums; o++)
@@ -152,16 +166,16 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
         int orbium_row = orbiums[o].row - rank * n_rows;
         // relevant but redundant condition
         // if (orbium_row >= -ORBIUM_SIZE && orbium_row < n_rows + ORBIUM_SIZE)
-        padded_world = place_orbium(padded_world, n_rows, cols, orbium_row, orbiums[o].col, orbiums[o].angle);
+        place_orbium(inner_world, n_rows, cols, orbium_row, orbiums[o].col, orbiums[o].angle);
     }
-    
+
     // Lenia Simulation
     for (unsigned int step = 0; step < steps; step++)
     {
         // Exchange overlapping rows with neighbors
-        exchange_overlap(padded_world, n_rows, cols, rank, procs);
+        exchange_overlap(padded_world, n_rows, cols, rank, procs, kernel_size);
         // Convolution
-        tmp = convolve2d(tmp, inner_world, w, n_rows, cols, kernel_size, kernel_size);
+        tmp = convolve2d(tmp, padded_world, w, n_rows, cols, kernel_size, kernel_size);
 
         // Evolution
         for (unsigned int i = 0; i < n_rows; i++) {
