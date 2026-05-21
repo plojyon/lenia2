@@ -1,18 +1,24 @@
 #!/bin/bash
 
+N=$1
+OUT_FILE=$2
+CPU_PER_TASK=$3
+
+sbatch <<EOT
+#!/bin/bash
 #SBATCH --reservation=fri
-#SBATCH --job-name=lenia
-#SBATCH --ntasks-per-node=2
+#SBATCH --partition=gpu
+#SBATCH --job-name=lenia_2_${N}
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=${CPU_PER_TASK}
+#SBATCH --gpus=1
 #SBATCH --nodes=1
-#SBATCH --output=lenia_out.log
+#SBATCH --output=${OUT_FILE}
 #SBATCH --hint=nomultithread
 
-#Load MPI module 
+#LOAD MODULES
 module load OpenMPI
 
-#Build
-make
-
-#Run
-mpirun -np $SLURM_NTASKS ./lenia.out
-
+#RUN
+srun mpirun -np $N ./lenia.out
+EOT
