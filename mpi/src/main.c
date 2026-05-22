@@ -13,17 +13,12 @@ int main(int argc, char *argv[])
     char node_name[MPI_MAX_PROCESSOR_NAME];
     int name_len;
 
-    if (argc < 1)
+    if (argc < 2)
     {
         printf("usage: <N>");
     }
 
-    for (int i = 0; i < argc; i++)
-    {
-        printf("Arg %d: %s", i, argv[i]);
-    }
-
-    int n = atoi(argv[0]);
+    int n = atoi(argv[1]);
 
     printf("N: %d", n);
 
