@@ -1,8 +1,7 @@
-
 #!/bin/bash
 
-GRID_SIZE=(128 256) # 512 1024 2048 4096
-SIZES=(1 2 4 8 16) #  32 64 128 256
+GRID_SIZES=(128 512 1024 2048 4096)
+SIZES=(1 2 4 16 32)
 RUNS=5
 
 for G in "${GRID_SIZE[@]}"; do
@@ -12,4 +11,4 @@ for G in "${GRID_SIZE[@]}"; do
             ./run_lenia.sh "$N" "$GRID_SIZE" "$out_file"
         done
     done
-done 
+done
