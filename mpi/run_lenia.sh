@@ -8,7 +8,6 @@ CPU_PER_TASK=$4
 sbatch <<EOT
 #!/bin/bash
 #SBATCH --reservation=fri
-#SBATCH --partition=gpu
 #SBATCH --job-name=lenia_2_${NUM_PROC}_${GRID_SIZE}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=${CPU_PER_TASK}
