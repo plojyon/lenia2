@@ -18,6 +18,11 @@ int main(int argc, char *argv[])
         printf("usage: <N>");
     }
 
+    for (int i = 0; i < argc; i++)
+    {
+        printf("Arg %d: %s", i, argv[i]);
+    }
+
     int n = atoi(argv[0]);
 
     printf("N: %d", n);
