@@ -10,7 +10,6 @@ sbatch <<EOT
 #SBATCH --job-name=lenia_2_${NUM_PROC}_${GRID_SIZE}
 #SBATCH --ntasks=${NUM_PROC}
 #SBATCH --cpus-per-task=1
-#SBATCH --gpus=1
 #SBATCH --nodes=1
 #SBATCH --output=${OUT_FILE}
 #SBATCH --hint=nomultithread
