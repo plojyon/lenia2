@@ -18,5 +18,5 @@ sbatch <<EOT
 module load OpenMPI
 
 #RUN
-srun mpirun --mca pml ob1 -np $NUM_PROC ./lenia.out $GRID_SIZE
+mpirun --mca pml ob1 -np $NUM_PROC ./lenia.out $GRID_SIZE
 EOT
