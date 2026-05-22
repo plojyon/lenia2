@@ -30,10 +30,19 @@ int main(int argc, char *argv[])
 
     struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, n / 3, 0}, {n / 3, 0, 180}};
 
+    MPI_Barrier(MPI_COMM_WORLD);
     double start = MPI_Wtime();
+
     double *world = evolve_lenia(n, n, NUM_STEPS, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS);
-    double stop = MPI_Wtime();
-    printf("Execution time: %.3f\n", stop - start);
+
+    double local_time = MPI_Wtime() - start;
+    double max_time;
+    MPI_Reduce(&local_time, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if (myid == 0)
+    {
+        printf("Total execution time: %.3f\n", max_time);
+    }
     free(world);
     MPI_Finalize();
     return 0;
