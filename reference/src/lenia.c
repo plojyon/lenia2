@@ -5,9 +5,8 @@
 #include "orbium.h"
 #include "gifenc.h"
 
-
 // Uncomment to generate gif animation
-//#define GENERATE_GIF
+// #define GENERATE_GIF
 
 // For prettier indexing syntax
 #define w(r, c) (w[(r) * w_cols + (c)])
@@ -87,7 +86,7 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
 }
 
 // Function to evolve Lenia
-double *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums)
+double *evolve_lenia(unsigned int rows, unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums)
 {
 
 #ifdef GENERATE_GIF
@@ -107,7 +106,7 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
     double *tmp = (double *)calloc(rows * cols, sizeof(double));
 
     // Generate convolution kernel
-    w=generate_kernel(w,kernel_size);
+    w = generate_kernel(w, kernel_size);
 
     // Place orbiums
     for (unsigned int o = 0; o < num_orbiums; o++)
@@ -120,7 +119,7 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
     {
         // Convolution
         tmp = convolve2d(tmp, world, w, rows, cols, kernel_size, kernel_size);
-        
+
         // Evolution
         for (unsigned int i = 0; i < rows; i++)
         {
