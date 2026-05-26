@@ -86,7 +86,7 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
 }
 
 // Function to evolve Lenia
-double *evolve_lenia(unsigned int rows, unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums)
+double *evolve_lenia(unsigned int rows, unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, struct orbium_coo *orbiums, const unsigned int num_orbiums)
 {
 
 #ifdef GENERATE_GIF

@@ -7,8 +7,6 @@
 #define KERNEL_SIZE 26
 #define NUM_ORBIUMS 2
 
-struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, N / 3, 0}, {N / 3, 0, 180}};
-
 int main(int argc, char *argv[])
 {
     int myid, procs;
@@ -29,6 +27,8 @@ int main(int argc, char *argv[])
     MPI_Comm_size(MPI_COMM_WORLD, &procs);        // number of processes involved in communication
     MPI_Get_processor_name(node_name, &name_len); // compute node name
     printf("Hello from process %d of %d in node %s\n", myid, procs, node_name);
+
+    struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, N / 3, 0}, {N / 3, 0, 180}};
 
     double start = MPI_Wtime();
     double *world = evolve_lenia(n, n, NUM_STEPS, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS);
